@@ -1,77 +1,76 @@
-from machine import Pin, PWM
+import RPi.GPIO as GPIO
+import time
 
-# Motor pins
-IN1 = Pin(14, Pin.OUT)
-IN2 = Pin(15, Pin.OUT)
-ENA = PWM(Pin(13))
-ENA.freq(1000)
+# GPIO pins
+IN1 = 17
+IN2 = 27
+ENA = 22   # PWM pin
 
-# Current speed (0–65535)
-current_speed = 40000    # default ~60%
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(IN1, GPIO.OUT)
+GPIO.setup(IN2, GPIO.OUT)
+GPIO.setup(ENA, GPIO.OUT)
+
+pwm = GPIO.PWM(ENA, 1000)   # PWM at 1 kHz
+pwm.start(0)                # start with 0% duty cycle
+
+current_speed = 60          # default speed (percent)
 
 def set_speed(level):
-    """
-    level = 0–9
-    converts level to 0–65535 PWM
-    """
     global current_speed
-    if level == 0:
-        current_speed = 0
-    else:
-        current_speed = int((level / 9) * 65535)
-
-    ENA.duty_u16(current_speed)
-
+    current_speed = int((level / 9) * 100)  # convert 0–9 to 0–100%
+    pwm.ChangeDutyCycle(current_speed)
 
 def motor_forward():
-    IN1.high()
-    IN2.low()
-    ENA.duty_u16(current_speed)
-
+    GPIO.output(IN1, GPIO.HIGH)
+    GPIO.output(IN2, GPIO.LOW)
+    pwm.ChangeDutyCycle(current_speed)
 
 def motor_backward():
-    IN1.low()
-    IN2.high()
-    ENA.duty_u16(current_speed)
-
+    GPIO.output(IN1, GPIO.LOW)
+    GPIO.output(IN2, GPIO.HIGH)
+    pwm.ChangeDutyCycle(current_speed)
 
 def motor_stop():
-    IN1.low()
-    IN2.low()
-    ENA.duty_u16(0)
-
+    GPIO.output(IN1, GPIO.LOW)
+    GPIO.output(IN2, GPIO.LOW)
+    pwm.ChangeDutyCycle(0)
 
 print("""
 Controls:
 0 = STOP
 1 = FORWARD
 2 = BACKWARD
-3–9 = SPEED LEVEL
+3–9 = SPEED CONTROL
 """)
 
-while True:
-    cmd = input().strip()
+try:
+    while True:
+        cmd = input().strip()
 
-    # STOP
-    if cmd == "0":
-        print("STOP")
-        motor_stop()
+        if cmd == "0":
+            print("STOP")
+            motor_stop()
 
-    # FORWARD
-    elif cmd == "1":
-        print("FORWARD, speed:", current_speed)
-        motor_forward()
+        elif cmd == "1":
+            print("FORWARD at", current_speed, "%")
+            motor_forward()
 
-    # BACKWARD
-    elif cmd == "2":
-        print("BACKWARD, speed:", current_speed)
-        motor_backward()
+        elif cmd == "2":
+            print("BACKWARD at", current_speed, "%")
+            motor_backward()
 
-    # SPEED 3–9
-    elif cmd.isdigit() and 3 <= int(cmd) <= 9:
-        level = int(cmd)
-        set_speed(level)
-        print("Speed level", level, "=> PWM =", current_speed)
+        elif cmd.isdigit() and 3 <= int(cmd) <= 9:
+            level = int(cmd)
+            set_speed(level)
+            print("Speed set to level", level, "=>", current_speed, "%")
 
-    else:
-        print("Invalid input")
+        else:
+            print("Invalid command")
+
+except KeyboardInterrupt:
+    pass
+
+finally:
+    pwm.stop()
+    GPIO.cleanup()
