@@ -1,54 +1,68 @@
 import asyncio
-from bleak import BleakClient
+from bleak import BleakScanner, BleakClient
 
-ESP32_ADDRESS = "6C:C8:40:58:AE:62" # <--- ใส่ MAC ของคุณ
+# ==========================================
+# UUID ต้องตรงกับ ESP32 เป๊ะๆ
+# ==========================================
+SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-# ========================================================
-# ฟังก์ชันนี้จะทำงานอัตโนมัติ เมื่อ ESP32 ส่งข้อมูลกลับมา
-# ========================================================
-def notification_handler(sender, data):
-    # data ที่ได้มาจะเป็น byte ต้อง decode เป็น string
-    received_string = data.decode()
-    print(f"\n[ESP32 says]: {received_string}")
-    # print สวยๆ เพื่อไม่ให้ทับกับช่อง input (แต่ก็ยังทับบ้างนิดหน่อย)
-    print("Enter command (1-9 or q): ", end="", flush=True)
-
 async def main():
-    print(f"Connecting to {ESP32_ADDRESS}...")
+    print("Searching for ESP32 with specific Service UUID...")
+    
+    # 1. ค้นหาอุปกรณ์ที่มี Service UUID ที่เรากำหนด
+    # วิธีนี้ชัวร์กว่าการหาชื่อ เพราะชื่ออาจซ้ำหรือเปลี่ยนได้
+    device = await BleakScanner.find_device_by_filter(
+        lambda d, ad: SERVICE_UUID.lower() in ad.service_uuids
+    )
 
+    if not device:
+        print(f"Not found device with Service UUID: {SERVICE_UUID}")
+        return
+
+    print(f"Found Device: {device.name} ({device.address})")
+    print("Connecting...")
+
+    # 2. เชื่อมต่อ
+    async with BleakClient(device.address) as client:
+        print(f"Connected: {client.is_connected}")
+
+        # วนลูปส่งค่า 1 ถึง 9
+        for i in range(1, 10):
+            value_to_send = str(i) # แปลงตัวเลขเป็น String
+            print(f"Sending: {value_to_send}")
+
+            try:
+                # ---------------------------------------------------------
+                # จุดสำคัญแก้ Error "Operation is not supported"
+                # ---------------------------------------------------------
+                # เราต้องระบุ Characteristic UUID (ไม่ใช่ Service)
+                # และ response=True คือการเขียนแบบรอการยืนยัน (Write With Response)
+                await client.write_gatt_char(
+                    CHARACTERISTIC_UUID, 
+                    value_to_send.encode(), # ต้องแปลง string เป็น bytes
+                    response=True 
+                )
+            except Exception as e:
+                print(f"Error sending {value_to_send}: {e}")
+                # ถ้า response=True พัง ให้ลอง response=False (Write Without Response)
+                try:
+                    print("Retrying with response=False...")
+                    await client.write_gatt_char(
+                        CHARACTERISTIC_UUID, 
+                        value_to_send.encode(), 
+                        response=False
+                    )
+                except Exception as e2:
+                    print(f"Failed again: {e2}")
+
+            await asyncio.sleep(1) # หน่วงเวลา 1 วินาทีก่อนส่งค่าต่อไป
+
+        print("Finished sending values 1-9")
+        # เมื่อจบ block 'async with' มันจะ disconnect ให้อัตโนมัติ
+
+if __name__ == "__main__":
     try:
-        async with BleakClient(ESP32_ADDRESS) as client:
-            print(f"Connected: {client.is_connected}")
-            
-            # ----------------------------------------------------
-            # เริ่มเปิดรับข้อมูล (Subscribe to Notifications)
-            # ----------------------------------------------------
-            await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
-
-            print("------------------------------------------------")
-            print("Listening for sensor data... (Input works normally)")
-            print("------------------------------------------------")
-
-            while True:
-                # หมายเหตุ: การใช้ input() จะหยุดรอ user พิมพ์
-                # แต่ข้อมูลจาก sensor จะยังคงเด้งเข้ามาแทรกได้ (อาจจะทำให้หน้าจอเลอะเทอะนิดหน่อย)
-                command = input("Enter command (1-9 or q): ")
-
-                if command.lower() == 'q':
-                    break
-                
-                elif command in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-                    # ส่งค่าไปหา ESP32
-                    await client.write_gatt_char(CHARACTERISTIC_UUID, command.encode())
-                
-                else:
-                    print("Invalid input")
-
-            # ก่อนจบโปรแกรม ยกเลิกการรับข้อมูล
-            await client.stop_notify(CHARACTERISTIC_UUID)
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-asyncio.run(main())
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Program stopped by user")
