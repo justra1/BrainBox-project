@@ -1,7 +1,7 @@
 import asyncio
 from bleak import BleakClient
 
-ESP32_ADDRESS = "XX:XX:XX:XX:XX:XX" # <--- ใส่ MAC ของคุณ
+ESP32_ADDRESS = "6C:C8:40:58:AE:62" # <--- ใส่ MAC ของคุณ
 CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 # ========================================================
